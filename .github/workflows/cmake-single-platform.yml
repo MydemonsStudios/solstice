@@ -38,29 +38,46 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
-          $env:MSYSTEM = ""
-          # Find vcvars64.bat regardless of VS edition (Enterprise/Professional/Community/BuildTools)
+          # Find vcvars and capture its env into a temp script
           $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          Write-Host "VS installation found at: $vsPath"
+          Write-Host "VS path: $vsPath"
           $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
-          Write-Host "vcvars64 path: $vcvars"
-          # Run vcvars64 and capture env, then apply to current process
-          $envVars = cmd /c "`"$vcvars`" && set" | Where-Object { $_ -match "^[^=]+=.*" }
-          foreach ($line in $envVars) {
-            $name, $value = $line.Split("=", 2)
-            [System.Environment]::SetEnvironmentVariable($name, $value)
-          }
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE
+
+          # Write a cmd script that: unsets MSYSTEM, runs vcvars, then runs cmake
+          # This runs in a totally clean cmd process with no MSYSTEM inheritance
+          $script = @"
+SET MSYSTEM=
+CALL "$vcvars"
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE
+EXIT /B %ERRORLEVEL%
+"@
+          $scriptPath = "$env:TEMP\configure.cmd"
+          $script | Set-Content -Path $scriptPath -Encoding ASCII
+
+          # Start a brand new cmd.exe process (not inheriting pwsh env vars)
+          $proc = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList "/D", "/C", $scriptPath `
+            -WorkingDirectory $PWD `
+            -NoNewWindow `
+            -PassThru `
+            -Wait
+          exit $proc.ExitCode
 
       - name: Build solution
         shell: pwsh
         run: |
-          $env:MSYSTEM = ""
-          cmake --build build --config $env:BUILD_TYPE -- /m
+          $proc = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList "/D", "/C", "SET MSYSTEM= && cmake --build build --config $env:BUILD_TYPE -- /m" `
+            -WorkingDirectory $PWD `
+            -NoNewWindow `
+            -PassThru `
+            -Wait
+          exit $proc.ExitCode
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: solstice-dll
-          path: build\Release\*.dll
+          path: |
+            build\Release\*.dll
