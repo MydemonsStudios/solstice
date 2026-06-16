@@ -107,7 +107,7 @@ void DeviceSpoof::onConnectionRequestEvent(ConnectionRequestEvent& event)
 "DeviceId": "64a116be-2084-4331-a219-288007d1f25c",
 "DeviceModel": "System Product Name ASUS",
 "DeviceOS": 7,
-"GameVersion": "1.21.21",
+"GameVersion": "1.21.80",
 "GuiScale": -1,
 "IsEditorMode": false,
 "LanguageCode": "en_US",
